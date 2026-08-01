@@ -2712,30 +2712,26 @@ impl<P: ClapPlugin> Wrapper<P> {
     }
 
     unsafe extern "C" fn ext_gui_can_resize(_plugin: *const clap_plugin) -> bool {
-        // `ext_gui_set_size()` below actually applies host-initiated resizes to the editor, so
-        // we can honestly advertise support for it.
-        true
+        // NOTE: Deliberately kept `false`, *not* because host-initiated resizing is unsupported
+        //       (`ext_gui_set_size()` below does apply it) -- clap-wrapper's AUv2 view forwards
+        //       any externally-triggered `setFrame:` to `gui->set_size()` completely
+        //       unconditionally, regardless of what this function returns, so returning `true`
+        //       buys us nothing there. What it does do is make clap-wrapper's AUv2 view
+        //       (`wrappedview.asinclude.mm`, `initWithAUv2:`) set `NSViewWidthSizable |
+        //       NSViewHeightSizable` on the *outer* AU wrapper view. That lets AppKit
+        //       auto-stretch that outer view to match Logic's own (often much larger/differently
+        //       proportioned) window the moment it's inserted into the host's view hierarchy --
+        //       before our own inner editor has a matching size to show, which broke the editor
+        //       from the moment its window opened (not just on interactive resize).
+        false
     }
 
     unsafe extern "C" fn ext_gui_get_resize_hints(
         _plugin: *const clap_plugin,
-        hints: *mut clap_gui_resize_hints,
+        _hints: *mut clap_gui_resize_hints,
     ) -> bool {
-        check_null_ptr!(false, hints);
-
-        // We don't have a way to plumb an editor-specific minimum size or aspect ratio through
-        // this generic, GUI-framework-agnostic trait, so just advertise unconstrained resizing.
-        // Individual `Editor` implementations remain free to clamp what they actually accept in
-        // `Editor::set_size()`.
-        *hints = clap_gui_resize_hints {
-            can_resize_horizontally: true,
-            can_resize_vertically: true,
-            preserve_aspect_ratio: false,
-            aspect_ratio_width: 0,
-            aspect_ratio_height: 0,
-        };
-
-        true
+        // TODO: Implement Host->Plugin GUI resizing
+        false
     }
 
     unsafe extern "C" fn ext_gui_adjust_size(
@@ -2743,9 +2739,8 @@ impl<P: ClapPlugin> Wrapper<P> {
         _width: *mut u32,
         _height: *mut u32,
     ) -> bool {
-        // No snapping/clamping beyond what `Editor::set_size()` itself enforces; accept whatever
-        // size the host proposes as-is.
-        true
+        // TODO: Implement Host->Plugin GUI resizing
+        false
     }
 
     unsafe extern "C" fn ext_gui_set_size(
