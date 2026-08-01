@@ -107,13 +107,35 @@ where
             move |egui_ctx, queue, state| {
                 let setter = ParamSetter::new(context.as_ref());
 
+                // `queue.resize()` takes a `PhySize`, i.e. *physical* pixels, while every size we
+                // store on `EguiState` (and receive from `Editor::set_size()`) is in *logical*
+                // pixels (matching `EguiState::size()`'s documented contract). `egui_baseview`
+                // derives its own `physical_size`/`screen_rect` bookkeeping directly from what we
+                // pass here (see `EguiWindow::new`: `physical_size = logical_size *
+                // pixels_per_point`), so passing raw logical pixels under-reports the physical
+                // size by the DPI scale factor on any non-1x display (e.g. every Retina Mac).
+                // That desyncs egui's own notion of its canvas size from the *actual* (correctly
+                // resized) NSView/GL surface below: egui only lays out and hit-tests within the
+                // smaller, wrongly-scaled area it believes exists, leaving the rest of the real
+                // surface blank and unresponsive -- exactly the "content pinned in a corner"
+                // symptom this fix is for. `send_viewport_cmd(InnerSize(..))` is unaffected by
+                // this since baseview's own `Window::resize()` already documents its `Size` as
+                // logical pixels and converts internally.
+                let pixels_per_point = egui_ctx.pixels_per_point();
+                let to_physical = |size: (u32, u32)| {
+                    PhySize::new(
+                        (size.0 as f32 * pixels_per_point).round() as u32,
+                        (size.1 as f32 * pixels_per_point).round() as u32,
+                    )
+                };
+
                 // The host resized us on its own initiative (e.g. the user dragged the host's
                 // own window/view chrome, as opposed to a resize handle drawn by our own GUI).
                 // The host has already decided this size, so unlike `requested_size` below we
                 // apply it directly without asking the host to confirm it via
                 // `context.request_resize()` first.
                 if let Some(new_size) = egui_state.host_requested_size.swap(None) {
-                    queue.resize(PhySize::new(new_size.0, new_size.1));
+                    queue.resize(to_physical(new_size));
                     egui_ctx.send_viewport_cmd(ViewportCommand::InnerSize(Vec2::new(
                         new_size.0 as f32,
                         new_size.1 as f32,
@@ -136,7 +158,7 @@ where
                     // Ask the plugin host to resize to self.size()
                     if context.request_resize() {
                         // Resize the content of egui window
-                        queue.resize(PhySize::new(new_size.0, new_size.1));
+                        queue.resize(to_physical(new_size));
                         egui_ctx.send_viewport_cmd(ViewportCommand::InnerSize(Vec2::new(
                             new_size.0 as f32,
                             new_size.1 as f32,
