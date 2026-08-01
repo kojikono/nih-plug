@@ -2712,16 +2712,30 @@ impl<P: ClapPlugin> Wrapper<P> {
     }
 
     unsafe extern "C" fn ext_gui_can_resize(_plugin: *const clap_plugin) -> bool {
-        // TODO: Implement Host->Plugin GUI resizing
-        false
+        // `ext_gui_set_size()` below actually applies host-initiated resizes to the editor, so
+        // we can honestly advertise support for it.
+        true
     }
 
     unsafe extern "C" fn ext_gui_get_resize_hints(
         _plugin: *const clap_plugin,
-        _hints: *mut clap_gui_resize_hints,
+        hints: *mut clap_gui_resize_hints,
     ) -> bool {
-        // TODO: Implement Host->Plugin GUI resizing
-        false
+        check_null_ptr!(false, hints);
+
+        // We don't have a way to plumb an editor-specific minimum size or aspect ratio through
+        // this generic, GUI-framework-agnostic trait, so just advertise unconstrained resizing.
+        // Individual `Editor` implementations remain free to clamp what they actually accept in
+        // `Editor::set_size()`.
+        *hints = clap_gui_resize_hints {
+            can_resize_horizontally: true,
+            can_resize_vertically: true,
+            preserve_aspect_ratio: false,
+            aspect_ratio_width: 0,
+            aspect_ratio_height: 0,
+        };
+
+        true
     }
 
     unsafe extern "C" fn ext_gui_adjust_size(
@@ -2729,8 +2743,9 @@ impl<P: ClapPlugin> Wrapper<P> {
         _width: *mut u32,
         _height: *mut u32,
     ) -> bool {
-        // TODO: Implement Host->Plugin GUI resizing
-        false
+        // No snapping/clamping beyond what `Editor::set_size()` itself enforces; accept whatever
+        // size the host proposes as-is.
+        true
     }
 
     unsafe extern "C" fn ext_gui_set_size(
@@ -2738,20 +2753,23 @@ impl<P: ClapPlugin> Wrapper<P> {
         width: u32,
         height: u32,
     ) -> bool {
-        // TODO: Implement Host->Plugin GUI resizing
-        // TODO: The host will also call this if an asynchronous (on Linux) resize request fails
+        // NOTE: The host will also call this if an asynchronous (on Linux) resize request fails
         check_null_ptr!(false, plugin, (*plugin).plugin_data);
         let wrapper = &*((*plugin).plugin_data as *const Self);
 
-        let (unscaled_width, unscaled_height) =
-            wrapper.editor.borrow().as_ref().unwrap().lock().size();
         let scaling_factor = wrapper.editor_scaling_factor.load(Ordering::Relaxed);
-        let (editor_width, editor_height) = (
-            (unscaled_width as f32 * scaling_factor).round() as u32,
-            (unscaled_height as f32 * scaling_factor).round() as u32,
+        let (unscaled_width, unscaled_height) = (
+            (width as f32 / scaling_factor).round() as u32,
+            (height as f32 / scaling_factor).round() as u32,
         );
 
-        width == editor_width && height == editor_height
+        wrapper
+            .editor
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .lock()
+            .set_size(unscaled_width, unscaled_height)
     }
 
     unsafe extern "C" fn ext_gui_set_parent(

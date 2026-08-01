@@ -69,11 +69,22 @@ pub trait Editor: Send {
     /// loaded.
     fn param_values_changed(&self);
 
+    /// Called by the host to resize the editor's window on its own initiative, as opposed to the
+    /// plugin requesting a resize through [`GuiContext::request_resize()`]. `width` and `height`
+    /// are in the same logical-pixel units as [`size()`][Self::size()] (i.e. before being
+    /// multiplied by the DPI scaling factor). Returns whether the editor was able to resize
+    /// itself to this size.
+    ///
+    /// The default implementation does not support host-initiated resizing and always returns
+    /// `false`.
+    fn set_size(&self, _width: u32, _height: u32) -> bool {
+        false
+    }
+
     // TODO: Reconsider adding a tick function here for the Linux `IRunLoop`. To keep this platform
     //       and API agnostic, add a way to ask the GuiContext if the wrapper already provides a
     //       tick function. If it does not, then the Editor implementation must handle this by
     //       itself. This would also need an associated `PREFERRED_FRAME_RATE` constant.
-    // TODO: Host->Plugin resizing
 }
 
 /// A raw window handle for platform and GUI framework agnostic editors. This implements

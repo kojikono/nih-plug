@@ -107,6 +107,21 @@ where
             move |egui_ctx, queue, state| {
                 let setter = ParamSetter::new(context.as_ref());
 
+                // The host resized us on its own initiative (e.g. the user dragged the host's
+                // own window/view chrome, as opposed to a resize handle drawn by our own GUI).
+                // The host has already decided this size, so unlike `requested_size` below we
+                // apply it directly without asking the host to confirm it via
+                // `context.request_resize()` first.
+                if let Some(new_size) = egui_state.host_requested_size.swap(None) {
+                    queue.resize(PhySize::new(new_size.0, new_size.1));
+                    egui_ctx.send_viewport_cmd(ViewportCommand::InnerSize(Vec2::new(
+                        new_size.0 as f32,
+                        new_size.1 as f32,
+                    )));
+
+                    egui_state.size.store(new_size);
+                }
+
                 // If the window was requested to resize
                 //
                 // NOTE: We must not clear `requested_size` before calling `request_resize()`.
@@ -160,6 +175,15 @@ where
         } else {
             self.egui_state.size()
         }
+    }
+
+    fn set_size(&self, width: u32, height: u32) -> bool {
+        if width == 0 || height == 0 {
+            return false;
+        }
+
+        self.egui_state.set_host_requested_size((width, height));
+        true
     }
 
     fn set_scale_factor(&self, factor: f32) -> bool {

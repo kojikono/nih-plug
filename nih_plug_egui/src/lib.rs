@@ -72,6 +72,14 @@ pub struct EguiState {
     #[serde(skip)]
     requested_size: AtomicCell<Option<(u32, u32)>>,
 
+    /// A size the host told us to resize to on its own initiative (through
+    /// [`Editor::set_size()`][nih_plug::prelude::Editor::set_size]), as opposed to us asking the
+    /// host to resize via `requested_size` above. The host has already decided this size, so
+    /// unlike `requested_size` it is applied directly on the next frame without asking the host
+    /// to confirm it first.
+    #[serde(skip)]
+    host_requested_size: AtomicCell<Option<(u32, u32)>>,
+
     /// Whether the editor's window is currently open.
     #[serde(skip)]
     open: AtomicBool,
@@ -97,6 +105,7 @@ impl EguiState {
         Arc::new(EguiState {
             size: AtomicCell::new((width, height)),
             requested_size: Default::default(),
+            host_requested_size: Default::default(),
             open: AtomicBool::new(false),
         })
     }
@@ -115,5 +124,11 @@ impl EguiState {
     /// Set the new size that will be used to resize the window if the host allows.
     fn set_requested_size(&self, new_size: (u32, u32)) {
         self.requested_size.store(Some(new_size));
+    }
+
+    /// Record a size the host told us to resize to on its own initiative. Applied directly on the
+    /// next frame, without asking the host to confirm it (see the field's doc comment).
+    pub(crate) fn set_host_requested_size(&self, new_size: (u32, u32)) {
+        self.host_requested_size.store(Some(new_size));
     }
 }
