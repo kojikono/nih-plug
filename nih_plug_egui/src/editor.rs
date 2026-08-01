@@ -108,7 +108,16 @@ where
                 let setter = ParamSetter::new(context.as_ref());
 
                 // If the window was requested to resize
-                if let Some(new_size) = egui_state.requested_size.swap(None) {
+                //
+                // NOTE: We must not clear `requested_size` before calling `request_resize()`.
+                //       `Editor::size()` (used by the host-facing `request_resize()` call to
+                //       determine the size to negotiate) reads `requested_size` to find the
+                //       pending size. Clearing it first makes that call report the *old*,
+                //       already-committed size, so the host is asked to "resize" to a no-op
+                //       size while our own GL/window surface below is resized to the *new*
+                //       size regardless, desyncing the plugin's surface from the host's actual
+                //       window size (visible as clipped/misaligned rendering after a resize).
+                if let Some(new_size) = egui_state.requested_size.load() {
                     // Ask the plugin host to resize to self.size()
                     if context.request_resize() {
                         // Resize the content of egui window
@@ -121,6 +130,8 @@ where
                         // Update the state
                         egui_state.size.store(new_size);
                     }
+
+                    egui_state.requested_size.store(None);
                 }
 
                 // For now, just always redraw. Most plugin GUIs have meters, and those almost always
